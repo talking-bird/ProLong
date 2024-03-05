@@ -39,6 +39,7 @@ class Storage:
 
     def add_record(self, encrypted_data_hash, user_address, short_description, iv,
                    price):
+        # TODO. Use SQLite instead
         if not os.path.exists(self.registry_path):
             data_frame = pd.DataFrame(columns=[DATA_HASH,
                                                ACCOUNT_ADDRESS,
@@ -60,23 +61,6 @@ class Storage:
                                        ignore_index=True)
 
         data_frame.to_csv(self.registry_path)
-
-    def add_customer(self, customer_address, public_key):
-        if not os.path.exists(self.customers_path):
-            data_frame = pd.DataFrame(columns=[ACCOUNT_ADDRESS,
-                                               PUBLIC_KEY])
-
-        else:
-            data_frame = pd.read_csv(self.customers_path, index_col=[0])
-
-        if customer_address in data_frame[ACCOUNT_ADDRESS].values:
-            data_frame = data_frame.drop(data_frame[data_frame[ACCOUNT_ADDRESS] == customer_address].index)
-
-        data_frame = data_frame.append({ACCOUNT_ADDRESS: customer_address,
-                                        PUBLIC_KEY: public_key},
-                                       ignore_index=True)
-
-        data_frame.to_csv(self.customers_path)
 
     def add_transaction(self, customer_address, data_hash, encrypted_key):
         if not os.path.exists(self.transactions_path):
@@ -150,3 +134,19 @@ class Storage:
 #                                    ignore_index=True)
 #
 #     data_frame.to_csv(self.registry_path)
+# def add_customer(self, customer_address, public_key):
+#     if not os.path.exists(self.customers_path):
+#         data_frame = pd.DataFrame(columns=[ACCOUNT_ADDRESS,
+#                                            PUBLIC_KEY])
+#
+#     else:
+#         data_frame = pd.read_csv(self.customers_path, index_col=[0])
+#
+#     if customer_address in data_frame[ACCOUNT_ADDRESS].values:
+#         data_frame = data_frame.drop(data_frame[data_frame[ACCOUNT_ADDRESS] == customer_address].index)
+#
+#     data_frame = data_frame.append({ACCOUNT_ADDRESS: customer_address,
+#                                     PUBLIC_KEY: public_key},
+#                                    ignore_index=True)
+#
+#     data_frame.to_csv(self.customers_path)

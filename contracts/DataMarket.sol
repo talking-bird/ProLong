@@ -40,8 +40,9 @@ contract DataMarket {
     mapping(address => bytes32[]) public sellerFiles;
     /// @notice Maps buyers address to their bough files via buyFile function
     mapping(address => bytes32[]) public buyerFiles;
-    /// @dev Maps file Id to file hash
-    mapping(uint256 => bytes32) fileIdToHash;
+    /// @notice Maps file Id to file hash
+    mapping(uint256 => bytes32) public fileIdToHash;
+    mapping(bytes32 => mapping(address => bool)) public isBuyer;
 
     /**
      * @notice Emits event when file is uploaded
@@ -89,7 +90,9 @@ contract DataMarket {
      * @param _hash Hash of the file
      */
     function uploadFile(uint256 cost, bytes32 _hash) public {
-        require(files[_hash].isAvailable == false, "File is already uploaded");
+        // preconditions
+        // check if file is already uploaded
+        require(files[_hash].seller == address(0), "File is already uploaded");
         // main action
         files[_hash] = File(msg.sender, cost, _fileId, true);
         // auxilary mappings and arrays
@@ -113,15 +116,24 @@ contract DataMarket {
             files[_hash].seller != msg.sender,
             "Seller cannot buy his own file"
         );
+        require(
+            !isBuyer[_hash][msg.sender],
+            "You have already bought this file"
+        );
+        require(
+            token.balanceOf(msg.sender) >= files[_hash].cost,
+            "Insufficient balance"
+        );
 
         uint256 cost = files[_hash].cost;
         address seller = files[_hash].seller;
         address buyer = tx.origin;
-
+        // catch transfer failure which will revert revert ERC20InsufficientAllowance(spender, currentAllowance, value);
         bool transferSuccess = token.transferFrom(buyer, seller, cost);
 
         if (transferSuccess) {
             buyerFiles[msg.sender].push(_hash);
+            isBuyer[_hash][msg.sender] = true;
             emit FileSold(seller, buyer, _hash); // buyer and hash is enough
         } else {
             revert("Token transfer failed");
@@ -164,26 +176,10 @@ contract DataMarket {
     }
 
     /**
-     * @notice Checks whether address belongs to the buyer
-     * @dev Checks whether address belongs to the buyer by searching it in the buyerFiles mapping
-     * @param _address Address to check
-     * @param _hash Hash of the file
-     * @return true if address is a buyer of the file
-     */
-    function isBuyer(
-        address _address,
-        bytes32 _hash
-    ) public view returns (bool) {
-        bytes32[] storage boughtFiles = buyerFiles[_address];
-        for (uint i = 0; i < boughtFiles.length; i++) {
-            if (boughtFiles[i] == _hash) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
+        require(
+            !isBuyer(msg.sender, _hash),
+            "Buyer already bought this file"
+        );
      * @notice Deletes file
      * @dev Deletes file by removing it from files mapping and other accessory mappings
      * @param _hash Hash of the file

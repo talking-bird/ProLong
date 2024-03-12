@@ -16,3 +16,5 @@ node_modules
 
 # python-related files
 /__pycache__
+
+config.ini

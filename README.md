@@ -5,9 +5,7 @@
 - install nodejs
 - install npm
 - create a project:
-  - `npm install --save-dev hardhat --ignore-scripts`
-  - `npm install @openzeppelin/contracts`
-  - `npm install --save-dev @nomicfoundation/hardhat-ethers ethers`
+  - `npm install 
 - `pip install web3`
 
 ## 2. Running the code

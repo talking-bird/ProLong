@@ -25,6 +25,7 @@ contract DataMarket {
         address seller;
         uint256 cost;
         uint256 fileId;
+        bytes32 publicKey;
         bool isAvailable;
     }
 
@@ -49,11 +50,13 @@ contract DataMarket {
      * @param seller Seller address
      * @param hash Hash of uploaded file
      * @param cost Cost of uploaded file
+     * @param publicKey Public key of seller
      */
     event FileUploaded(
         address indexed seller,
         bytes32 indexed hash,
-        uint256 cost
+        uint256 cost,
+        bytes32 publicKey
     );
     /**
      * @notice Emits event when file is sold
@@ -64,7 +67,8 @@ contract DataMarket {
     event FileSold(
         address indexed seller,
         address indexed buyer,
-        bytes32 indexed hash
+        bytes32 indexed hash,
+        bytes32 publicKey
     );
 
     /**
@@ -88,19 +92,20 @@ contract DataMarket {
      * @dev uploads file to the contract by adding it to files mapping and other accessory mappings
      * @param cost Cost of the file in ProLongTokens
      * @param _hash Hash of the file
+     * @param publicKey Public key of the seller
      */
-    function uploadFile(uint256 cost, bytes32 _hash) public {
+    function uploadFile(uint256 cost, bytes32 _hash, bytes32 publicKey) public {
         // preconditions
         // check if file is already uploaded
         require(files[_hash].seller == address(0), "File is already uploaded");
         // main action
-        files[_hash] = File(msg.sender, cost, _fileId, true);
+        files[_hash] = File(msg.sender, cost, _fileId, publicKey, true);
         // auxilary mappings and arrays
         fileIdToHash[_fileId] = _hash;
         sellerFiles[msg.sender].push(_hash);
         uploadedFiles.push(_hash);
 
-        emit FileUploaded(msg.sender, _hash, cost);
+        emit FileUploaded(msg.sender, _hash, cost, publicKey);
 
         _fileId++;
     }
@@ -134,7 +139,7 @@ contract DataMarket {
         if (transferSuccess) {
             buyerFiles[msg.sender].push(_hash);
             isBuyer[_hash][msg.sender] = true;
-            emit FileSold(seller, buyer, _hash); // buyer and hash is enough
+            emit FileSold(seller, buyer, _hash, files[_hash].publicKey); // buyer and hash is enough
         } else {
             revert("Token transfer failed");
         }

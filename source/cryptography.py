@@ -10,9 +10,10 @@ def generate_key_and_iv():
     return os.urandom(32), os.urandom(16)
 
 
-def encrypt_data(path_to_file, key, iv):
-    with open(path_to_file, "rb") as file:
-        file_data = file.read()
+def encrypt_data(file_data, key, iv):
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(file_data)
+    data_hash = digest.finalize()
 
     padder = PKCS7(128).padder()
     padded_data = padder.update(file_data)
@@ -22,11 +23,7 @@ def encrypt_data(path_to_file, key, iv):
     encryptor = cipher.encryptor()
     encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
 
-    digest = hashes.Hash(hashes.SHA256())
-    digest.update(padded_data)
-    encrypted_data_hash = digest.finalize()
-
-    return encrypted_data, encrypted_data_hash.hex()
+    return encrypted_data, data_hash.hex()
 
 
 def decrypt_data(path_to_file, key, iv):
@@ -63,7 +60,7 @@ def encrypt_data_via_public_key(public_key, data):
             algorithm=hashes.SHA256(),
             label=None
         )
-    ).hex()
+    )
 
 
 def decrypt_data_via_private_key(private_key, data):
@@ -82,14 +79,28 @@ Utils
 """
 
 
-def public_key2hex(public_key):
-    return b''.join(public_key.public_bytes(
+def public_key2bytes(public_key):
+    return public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
-    ).splitlines()[1:-1]).hex()
+    )
 
 
-def hex2public_key(public_key_hex):
+def private_key2bytes(private_key):
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+
+
+def bytes2public_key(public_key_bytes):
     return serialization.load_pem_public_key(b'-----BEGIN PUBLIC KEY-----' +
-                                             bytes.fromhex(public_key_hex) +
+                                             public_key_bytes +
                                              b'-----END PUBLIC KEY-----')
+
+
+def hex2private_key(private_key_hex):
+    return serialization.load_pem_private_key(b'-----BEGIN PRIVATE KEY-----' +
+                                              bytes.fromhex(private_key_hex[2:]) +
+                                              b'-----END PRIVATE KEY-----')

@@ -3,6 +3,7 @@ import streamlit as st
 import streamlit_authenticator as stauth
 import asyncio
 import os
+from cryptography.hazmat.primitives import serialization
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -10,9 +11,9 @@ asyncio.set_event_loop(loop)
 from omegaconf import OmegaConf
 from yaml.loader import SafeLoader
 from source.blockchain import ProLongBlockchain
-from source.io_utils import Storage, KeyStorage
+from source.io_utils import Storage, KeyStorage, insert_to_transactions, confirm_transaction, select_transactions
 from source.cryptography import generate_key_and_iv, encrypt_data, public_key2bytes, private_key2bytes, \
-    generate_public_and_private_keys
+    generate_public_and_private_keys, encrypt_data_via_public_key, bytes2public_key
 
 
 HOST_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -22,36 +23,93 @@ HOST_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4
 def owner_dashboard_view(prolong_blockchain, storage,
                          owner_address, owner_private_key):
     st.write(f'Welcome *{name}* to your ProLong dashboard.')
+    balance = prolong_blockchain.pl_token.functions.balanceOf(owner_address).call()
+    st.write(f'Your current balance is: **{balance} PLT**')
+    
+    # DASHBOARD ZONE
+    st.divider()
     st.title('Dashboard')
 
-    # TODO. Here we need to set price as well as short description
+    current_transactions = storage.get_transactions(owner_address)
+    if len(current_transactions) ==0:
+        st.info('There are currently no purchase orders.', icon="ℹ️")
+    else:
+        for transaction in current_transactions:
+            c1, c2, c3 = st.columns([1.5, 1.5, 1])
+            with st.container():
+                tr_id, consumer_address, owner_address, file_hash, encrypted_key, is_confirmed = transaction
+                c1.write(f"{consumer_address}")
+                c2.write(f"{file_hash}")
 
+                confirm_button = c3.button(label="Confirm", 
+                                        key=f'confirm_key_{tr_id}',  
+                                        use_container_width=True)
+
+                if confirm_button:
+                    pass
+
+
+    # consumer_public_key = get_public_key(consumer_address)
+    # public_key = open("./rsa_pub.pem", 'rb').read()
+    # consumer_public_rsa_key_bytes = storage.get_public_key(event['args']['buyer'])[0][0]
+    # encrypted_key = encrypt_data_via_public_key(bytes2public_key(consumer_public_rsa_key_bytes), key)
+    # consumer_public_rsa_key_bytes
+
+
+    
+    # FILE UPLOAD ZONE
+    st.divider()
+    st.title('Upload a new file')
     uploaded_file = st.file_uploader("Choose your data file")
-    short_description = 'step_by_step_encrypt.drawio'
-    price = 20
-
     if uploaded_file is not None:
         key, iv = generate_key_and_iv()
-
         encrypted_data, data_hash = encrypt_data(uploaded_file.getvalue(), key, iv)
 
-        if not storage.has_file(data_hash):
-            key_storage = KeyStorage()
-            key_storage.add_key(data_hash, key)
+        # TODO. Here we need to set price as well as short description
+        short_description = st.text_input("Please, enter short description of your file, e.g. `Glucose in blood`",
+                                          value="")
+        price = st.number_input('Set the desired price (RUB) for your analysis', 
+                                min_value=0, max_value=1000000, 
+                                value=10)
+        sell_decision = st.button(label="Put on market")
 
-            storage.add_file_to_storage(encrypted_data, data_hash, owner_address)
-            storage.add_file(data_hash, owner_address, short_description, iv, price)
+        if sell_decision:
+            if not storage.has_file(data_hash): #check if the file is already in db
+                key_storage = KeyStorage()
+                key_storage.add_key(data_hash, key)
 
-            prolong_blockchain.upload(owner_address, owner_private_key,
-                                      data_hash, price)
+                storage.add_file_to_storage(encrypted_data, data_hash, owner_address)
+                storage.add_file(data_hash, owner_address, short_description, iv, price)
 
-        else:
-            st.warning('This file has already been uploaded')
+                prolong_blockchain.upload(owner_address, owner_private_key,
+                                        data_hash, price)
+                st.info('The file was succesfully placed on the datamarket!', icon="ℹ️")
+            else:
+                st.warning('This file has already been uploaded!')
+
+    # UPLOADED FILES ZONE
+    st.divider()
+    st.title('My files')
+
+    files_list = storage.get_files()
+    for file in files_list:
+        c1, c2, c3  = st.columns([1.5, 3, 1])
+        with st.container():
+            file_id, file_hash, owner_id, short_description, _, price = file
+            if owner_id == owner_address:
+                c1.write(f"{owner_id}")
+                c2.write(f"{short_description}")
+                c3.write(f"{price} PLT")
+            else:
+                pass
+
 
 
 def marketplace_view(prolong_blockchain, storage,
                      consumer_address, consumer_private_key):
     st.write(f'Welcome *{name}* to the ProLong marketplace.')
+    balance = prolong_blockchain.pl_token.functions.balanceOf(consumer_address).call()
+    st.write(f'Your current balance is: {balance} PLT')
     st.title('Marketplace')
 
     if len(storage.get_public_key(consumer_address)) == 0:
@@ -70,23 +128,32 @@ def marketplace_view(prolong_blockchain, storage,
     files_list = storage.get_files()
 
     for file in files_list:
-        c1, c2, c3, c4 = st.columns([3, 3, 1, 1])
+        c1, c2, c3, c4 = st.columns([1.5, 3, 1, 1])
         with st.container():
-            c1.write(f"{file[2]}")
-            c2.write(f"{file[3]}")
-            c3.write(f"{file[5]}")
+            file_id, file_hash, owner_id, short_description, _, price = file
+            c1.write(f"{owner_id}")
+            c2.write(f"{short_description}")
+            c3.write(f"{price} PLT")
 
-            buy_button = c4.button(label="Buy", use_container_width=True)
+            buy_button = c4.button(label="Buy", 
+                                   key=f'buy_key_{file_id}',  
+                                   use_container_width=True)
 
             if buy_button:
                 prolong_blockchain.transfer(HOST_ADDRESS, HOST_PRIVATE_KEY,
                                             consumer_address,
-                                            file[5])
+                                            price)
 
                 prolong_blockchain.buy(consumer_address, consumer_private_key,
-                                       file[1], file[5])
+                                       file_hash, price)
+                
+                storage.add_transaction(consumer_address, owner_id, file_hash)
                 
         st.write('')
+    
+    # FILE DOWNLOADING ZONE
+    st.divider()
+    st.title('Purchased files')
 
 
 if __name__ == "__main__":
@@ -112,23 +179,26 @@ if __name__ == "__main__":
     )
     prolong_blockchain = ProLongBlockchain(contracts_config)
 
-    path_to_data_storage = "/Users/Konstantin/Desktop/BCEI/data"
+    path_to_data_storage = "/home/shappiron/Desktop/shappiron/ProLong/data"
     storage = Storage(path_to_data_storage)
 
     name, authentication_status, username = authenticator.login('main')
+    authenticator.logout('LogOut')
 
     if authentication_status:
         user_config = config['credentials']['usernames'][username]
 
         if username == 'web3owner':
             owner_dashboard_view(prolong_blockchain, storage,
-                                 user_config['address'], user_config['private_key'])
+                                 user_config['address'], 
+                                 user_config['private_key'])
 
         elif username == 'web3consumer':
             marketplace_view(prolong_blockchain, storage,
-                             user_config['address'], user_config['private_key'])
+                             user_config['address'], 
+                             user_config['private_key'])
 
-        authenticator.logout('LogOut')
+        
 
     elif not authentication_status:
         st.error('Username/password is incorrect')

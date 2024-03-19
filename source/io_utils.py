@@ -56,11 +56,22 @@ class Storage:
 
         conn.close()
 
-    def get_transactions(self, owner_address):
+    def get_transactions_owner(self, owner_address):
         conn = open_database(self.database_path)
-        records = select_transactions(conn, owner_address)
+        records = select_transactions_owner(conn, owner_address)
         conn.close()
         return records
+    
+    def get_transactions_consumer(self, consumer_address):
+        conn = open_database(self.database_path)
+        records = select_transactions_consumer(conn, consumer_address)
+        conn.close()
+        return records
+    
+    def update_confirm_transaction(self, id, encrypted_key):
+        conn = open_database(self.database_path)
+        confirm_transaction(conn, id, encrypted_key)
+        conn.close()
 
 
     def get_files(self):
@@ -193,7 +204,7 @@ def create_transactions_table(conn):
                    " consumer_address text UNIQUE NOT NULL,"
                    " owner_address text UNIQUE NOT NULL,"
                    " data_hash text UNIQUE NOT NULL,"
-                   " encrypted_key blob NOT NULL,"
+                   " encrypted_key blob,"
                    " is_confirmed integer DEFAULT 0"
                    ")")
     cursor.close()
@@ -232,7 +243,7 @@ def insert_to_transactions(conn,
     conn.commit()
     cursor.close()
 
-def select_transactions(conn,
+def select_transactions_owner(conn,
                            owner_address):
     cursor = conn.cursor()
     cursor.execute("SELECT * from transactions WHERE owner_address = ?", (owner_address,))
@@ -240,12 +251,19 @@ def select_transactions(conn,
     cursor.close()
     return records
 
+def select_transactions_consumer(conn,
+                           consumer_address):
+    cursor = conn.cursor()
+    cursor.execute("SELECT * from transactions WHERE consumer_address = ?", (consumer_address,))
+    records = cursor.fetchall()
+    cursor.close()
+    return records
+
 
 def confirm_transaction(conn, id, encrypted_key):
     cursor = conn.cursor()
-    cursor.execute("UPDATE transactions"
-                   "SET encrypted_key = ?, is_confirmed = 1 WHERE id = ?",
-                   (encrypted_key, id))
+    cursor.execute("UPDATE transactions SET encrypted_key = ?, is_confirmed = ? WHERE id = ?",
+                   (encrypted_key, 1, id))
     conn.commit()
     cursor.close()
 

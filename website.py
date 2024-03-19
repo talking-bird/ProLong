@@ -11,7 +11,7 @@ asyncio.set_event_loop(loop)
 from omegaconf import OmegaConf
 from yaml.loader import SafeLoader
 from source.blockchain import ProLongBlockchain
-from source.io_utils import Storage, KeyStorage, insert_to_transactions, confirm_transaction, select_transactions
+from source.io_utils import Storage, KeyStorage, insert_to_transactions, confirm_transaction, select_transactions_consumer, select_transactions_owner
 from source.cryptography import generate_key_and_iv, encrypt_data, public_key2bytes, private_key2bytes, \
     generate_public_and_private_keys, encrypt_data_via_public_key, bytes2public_key
 
@@ -30,7 +30,7 @@ def owner_dashboard_view(prolong_blockchain, storage,
     st.divider()
     st.title('Dashboard')
 
-    current_transactions = storage.get_transactions(owner_address)
+    current_transactions = storage.get_transactions_owner(owner_address)
     if len(current_transactions) ==0:
         st.info('There are currently no purchase orders.', icon="ℹ️")
     else:
@@ -46,7 +46,7 @@ def owner_dashboard_view(prolong_blockchain, storage,
                                         use_container_width=True)
 
                 if confirm_button:
-                    pass
+                    storage.update_confirm_transaction(tr_id, encrypted_key)
 
 
     # consumer_public_key = get_public_key(consumer_address)
@@ -154,6 +154,25 @@ def marketplace_view(prolong_blockchain, storage,
     # FILE DOWNLOADING ZONE
     st.divider()
     st.title('Purchased files')
+
+    current_transactions = storage.get_transactions_consumer(consumer_address)
+    if len(current_transactions) ==0:
+        st.info('There are currently no purchased files.', icon="ℹ️")
+    else:
+        for transaction in current_transactions:
+            tr_id, consumer_address, owner_address, file_hash, encrypted_key, is_confirmed = transaction
+            if is_confirmed == 1:
+                c1, c2, c3 = st.columns([1.5, 1.5, 1])
+                with st.container():
+                    
+                    c1.write(f"{owner_address}")
+                    c2.write(f"{file_hash}")
+
+                    download_button = c3.button(label="Download", 
+                                            key=f'down_key_{tr_id}',  
+                                            use_container_width=True)
+                    #or use:  st.download_button(label, data, file_name=None)
+
 
 
 if __name__ == "__main__":

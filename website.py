@@ -1,19 +1,21 @@
+import os.path
+
 import yaml
 import streamlit as st
 import streamlit_authenticator as stauth
 import asyncio
-import os
-from cryptography.hazmat.primitives import serialization
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 from omegaconf import OmegaConf
 from yaml.loader import SafeLoader
+from cryptography.hazmat.primitives import serialization
+
 from source.blockchain import ProLongBlockchain
-from source.io_utils import Storage, KeyStorage, insert_to_transactions, confirm_transaction, select_transactions_consumer, select_transactions_owner
+from source.io_utils import Storage, KeyStorage
 from source.cryptography import generate_key_and_iv, encrypt_data, public_key2bytes, private_key2bytes, \
-    generate_public_and_private_keys, encrypt_data_via_public_key, bytes2public_key
+    generate_public_and_private_keys, encrypt_data_via_public_key, decrypt_data_via_private_key, decrypt_data
 
 
 HOST_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -37,26 +39,24 @@ def owner_dashboard_view(prolong_blockchain, storage,
         for transaction in current_transactions:
             c1, c2, c3 = st.columns([1.5, 1.5, 1])
             with st.container():
-                tr_id, consumer_address, owner_address, file_hash, encrypted_key, is_confirmed = transaction
+                tr_id, consumer_address, _, file_hash, _, _ = transaction
                 c1.write(f"{consumer_address}")
                 c2.write(f"{file_hash}")
 
-                confirm_button = c3.button(label="Confirm", 
-                                        key=f'confirm_key_{tr_id}',  
-                                        use_container_width=True)
+                confirm_button = c3.button(label="Confirm",
+                                           key=f'confirm_key_{tr_id}',
+                                           use_container_width=True)
 
                 if confirm_button:
+                    event = prolong_blockchain.get_data_market_events()[0]['args']
+
+                    aes_key = KeyStorage().get_key(event['hash'].hex())[0][0]
+
+                    encrypted_key = encrypt_data_via_public_key(serialization.load_pem_public_key(event['publicKey']),
+                                                                aes_key)
+
                     storage.update_confirm_transaction(tr_id, encrypted_key)
 
-
-    # consumer_public_key = get_public_key(consumer_address)
-    # public_key = open("./rsa_pub.pem", 'rb').read()
-    # consumer_public_rsa_key_bytes = storage.get_public_key(event['args']['buyer'])[0][0]
-    # encrypted_key = encrypt_data_via_public_key(bytes2public_key(consumer_public_rsa_key_bytes), key)
-    # consumer_public_rsa_key_bytes
-
-
-    
     # FILE UPLOAD ZONE
     st.divider()
     st.title('Upload a new file')
@@ -64,25 +64,26 @@ def owner_dashboard_view(prolong_blockchain, storage,
     if uploaded_file is not None:
         key, iv = generate_key_and_iv()
         encrypted_data, data_hash = encrypt_data(uploaded_file.getvalue(), key, iv)
-
-        # TODO. Here we need to set price as well as short description
+        
         short_description = st.text_input("Please, enter short description of your file, e.g. `Glucose in blood`",
                                           value="")
-        price = st.number_input('Set the desired price (RUB) for your analysis', 
+        price = st.number_input('Set the desired price (PLT) for your analysis',
                                 min_value=0, max_value=1000000, 
                                 value=10)
         sell_decision = st.button(label="Put on market")
 
         if sell_decision:
-            if not storage.has_file(data_hash): #check if the file is already in db
+            if not storage.has_file(data_hash):
                 key_storage = KeyStorage()
                 key_storage.add_key(data_hash, key)
 
                 storage.add_file_to_storage(encrypted_data, data_hash, owner_address)
                 storage.add_file(data_hash, owner_address, short_description, iv, price)
 
+                print(key, iv)
+
                 prolong_blockchain.upload(owner_address, owner_private_key,
-                                        data_hash, price)
+                                          data_hash, price)
                 st.info('The file was succesfully placed on the datamarket!', icon="ℹ️")
             else:
                 st.warning('This file has already been uploaded!')
@@ -104,7 +105,6 @@ def owner_dashboard_view(prolong_blockchain, storage,
                 pass
 
 
-
 def marketplace_view(prolong_blockchain, storage,
                      consumer_address, consumer_private_key):
     st.write(f'Welcome *{name}* to the ProLong marketplace.')
@@ -112,7 +112,7 @@ def marketplace_view(prolong_blockchain, storage,
     st.write(f'Your current balance is: {balance} PLT')
     st.title('Marketplace')
 
-    if len(storage.get_public_key(consumer_address)) == 0:
+    if not os.path.exists('./rsa_pub.pem'):
         consumer_rsa_private_key, consumer_rsa_public_key = generate_public_and_private_keys()
 
         consumer_rsa_public_key_bytes = public_key2bytes(consumer_rsa_public_key)
@@ -122,8 +122,6 @@ def marketplace_view(prolong_blockchain, storage,
 
         with open("rsa_priv.pem", "wb") as rsa_priv:
             rsa_priv.write(private_key2bytes(consumer_rsa_private_key))
-
-        storage.add_consumer(consumer_address, consumer_rsa_public_key_bytes)
 
     files_list = storage.get_files()
 
@@ -144,9 +142,10 @@ def marketplace_view(prolong_blockchain, storage,
                                             consumer_address,
                                             price)
 
-                prolong_blockchain.buy(consumer_address, consumer_private_key,
-                                       file_hash, price)
-                
+                with open("rsa_pub.pem", "rb") as rsa_pub:
+                    prolong_blockchain.buy(consumer_address, consumer_private_key,
+                                           file_hash, price, rsa_pub.read())
+
                 storage.add_transaction(consumer_address, owner_id, file_hash)
                 
         st.write('')
@@ -168,11 +167,16 @@ def marketplace_view(prolong_blockchain, storage,
                     c1.write(f"{owner_address}")
                     c2.write(f"{file_hash}")
 
-                    download_button = c3.button(label="Download", 
-                                            key=f'down_key_{tr_id}',  
-                                            use_container_width=True)
-                    #or use:  st.download_button(label, data, file_name=None)
+                    with open("rsa_priv.pem", "rb") as rsa_priv:
+                        decrypted_key = \
+                            decrypt_data_via_private_key(serialization.load_pem_private_key(rsa_priv.read(), None),
+                                                         encrypted_key)
 
+                    decrypted_data = decrypt_data(storage.get_path_to_encrypted_file(owner_address, file_hash),
+                                                  decrypted_key,
+                                                  storage.get_iv(file_hash)[0][0])
+
+                    st.download_button("Download", decrypted_data, file_name=f'{file_hash}.pdf')
 
 
 if __name__ == "__main__":
@@ -198,7 +202,7 @@ if __name__ == "__main__":
     )
     prolong_blockchain = ProLongBlockchain(contracts_config)
 
-    path_to_data_storage = "/home/shappiron/Desktop/shappiron/ProLong/data"
+    path_to_data_storage = "./data"
     storage = Storage(path_to_data_storage)
 
     name, authentication_status, username = authenticator.login('main')

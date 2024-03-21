@@ -93,14 +93,15 @@ class ProLongBlockchain:
                                          price, bytes.fromhex(data_hash))
 
     def buy(self, consumer_address, consumer_private_key,
-            data_hash, price):
+            data_hash, price, consumer_rsa_public_key_bytes):
         self._build_and_send_transaction(self.pl_token, "approve",
                                          consumer_address, consumer_private_key,
                                          self.dm_config.address, price)
 
         self._build_and_send_transaction(self.data_market, "buyFile",
                                          consumer_address, consumer_private_key,
-                                         bytes.fromhex(data_hash))
+                                         bytes.fromhex(data_hash),
+                                         consumer_rsa_public_key_bytes)
 
     def get_data_market_events(self):
         return self.data_market.events.FileSold.get_logs(fromBlock=self.w3.eth.block_number)

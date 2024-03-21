@@ -92,15 +92,3 @@ def private_key2bytes(private_key):
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption()
     )
-
-
-def bytes2public_key(public_key_bytes):
-    return serialization.load_pem_public_key(b'-----BEGIN PUBLIC KEY-----' +
-                                             public_key_bytes +
-                                             b'-----END PUBLIC KEY-----')
-
-
-def hex2private_key(private_key_hex):
-    return serialization.load_pem_private_key(b'-----BEGIN PRIVATE KEY-----' +
-                                              bytes.fromhex(private_key_hex[2:]) +
-                                              b'-----END PRIVATE KEY-----')
